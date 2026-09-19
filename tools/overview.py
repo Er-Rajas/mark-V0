@@ -3,72 +3,145 @@ import pandas as pd
 
 def get_dtype(df):
     """
-    returns the data type of each columns in the given dataframe
+    Returns the data type of each column.
     """
-    return df.dtypes
+    return df.dtypes.astype(str).to_dict()
+
 
 def get_shape(df):
     """
-    Returns the shape of the given dataframe
+    Returns the number of rows and columns.
     """
-    return df.shape
+    rows, columns = df.shape
+
+    return {
+        "rows": rows,
+        "columns": columns
+    }
+
 
 def get_columns(df):
     """
-    Returns the columns of the given dataframe
+    Returns the column names.
     """
-    return df.columns
+    return list(df.columns)
 
-def get_head(df,n=10):
+
+def get_head(df, n=10):
     """
-    Returns the first n rows of the given dataframe default n =10
+    Returns the first n rows.
+    Used for the detailed report, not necessarily for the LLM.
     """
-    return df.head(n)
+    return df.head(n).to_dict(orient="records")
+
+
+def get_tail(df, n=10):
+    """
+    Returns the last n rows.
+    Used for the detailed report.
+    """
+    return df.tail(n).to_dict(orient="records")
+
 
 def get_unique_values(df):
     """
-    Returns the unique values of object or category columns in the given dataframe
+    Returns unique-value information for categorical columns.
+
+    For columns with a small number of unique values,
+    actual values are returned.
+
+    For high-cardinality columns, only the count is returned.
     """
+
     unique_values = {}
-    for col in df.select_dtypes(include=['object','category','str','bool']).columns:
-        unique_values[col] = df[col].unique()
+
+    for col in df.select_dtypes(
+        include=["object", "category", "str", "bool"]
+    ).columns:
+
+        values = df[col].dropna().unique()
+        count = len(values)
+
+        if count <= 20:
+            unique_values[col] = {
+                "unique_count": count,
+                "values": values.tolist()
+            }
+        else:
+            unique_values[col] = {
+                "unique_count": count
+            }
+
     return unique_values
 
-def get_tail(df,n=10):
-    """
-    Returns the last n rows of the given dataframe default n =10
-    """
-    return df.tail(n)
 
 def get_missing_values(df):
     """
-    Returns the number of mising values in each coulmn with the percentage of the missing values 
+    Returns missing-value count and percentage for each column.
     """
+
     missing_values = df.isnull().sum()
-    missing_percentage = (missing_values/len(df)) *100
-    missing_df = pd.DataFrame({'Missing Values': missing_values, 'Percentage':missing_percentage})
-    return missing_df
+    missing_percentage = (missing_values / len(df)) * 100
 
-def get_overview(df,n=10):
+    result = {}
+
+    for column in df.columns:
+
+        if missing_values[column] > 0:
+
+            result[column] = {
+                "missing_count": int(missing_values[column]),
+                "missing_percentage": round(
+                    float(missing_percentage[column]), 2
+                )
+            }
+
+    return result
+
+
+def get_overview(df, n=10):
     """
-    Returns the overview of the given dataframe includes shape,columns,missing values,data types,unique values,head and tail of dataframe
+    Returns a compact dataset overview.
+
+    The result is designed to be passed to the LLM.
+    Large DataFrame objects are not returned.
     """
-    return{
-        "Shape" : get_shape(df),
-        "Columns" : get_columns(df),
-        "Data Types" : get_dtype(df),
-        "Data Frame Head" : get_head(df,n),
-        "Data Frame Tail": get_tail(df,n),
-        "Unique Values" : get_unique_values(df),
-        "Missing Values" : get_missing_values(df),
-        
-        
-    }    
 
+    shape = get_shape(df)
+    dtypes = get_dtype(df)
+    columns = get_columns(df)
+    missing = get_missing_values(df)
+    unique_values = get_unique_values(df)
 
-# def get_summary(df):
-#     """"
-#     Return the mean mode median and standard deviation of the given dataframe only numeric columns   
-#     """
-#     return df.describe(include='numeric')
-    
+    numeric_columns = df.select_dtypes(
+        include="number"
+    ).columns.tolist()
+
+    categorical_columns = df.select_dtypes(
+        include=["object", "category", "str", "bool"]
+    ).columns.tolist()
+
+    total_missing = int(df.isnull().sum().sum())
+
+    return {
+        "dataset": {
+            "rows": shape["rows"],
+            "columns": shape["columns"]
+        },
+
+        "columns": columns,
+
+        "data_types": dtypes,
+
+        "column_types": {
+            "numeric": numeric_columns,
+            "categorical": categorical_columns
+        },
+
+        "missing_values": {
+            "total": total_missing,
+            "columns_affected": missing
+        },
+
+        "unique_values": unique_values
+    }
