@@ -1,7 +1,7 @@
+from agent.tool import TOOLS, FUNCTION_MAP
 import json
 import ollama
-
-from agent.tool import TOOLS, FUNCTION_MAP
+import time
 
 
 def parse_text_tool_calls(content):
@@ -100,6 +100,7 @@ class MiniDataAnalyst:
 
     def __init__(self, df):
         self.df = df
+        self.report_data = {}
 
     def run(self, query):
 
@@ -133,13 +134,15 @@ use the available tools to obtain the required information.
 
         # Maximum number of agent iterations
         for step in range(5):
-
+            start_time = time.perf_counter()
             response = ollama.chat(
-                model="qwen3:4b ",
+                model="qwen3:4b",
                 messages=messages,
                 tools=TOOLS
             )
+            elapsed = time.perf_counter() - start_time
 
+            print(f"⏱️ LLM call took: {elapsed:.2f} seconds")
             message = response.message
 
             print(f"\n===== STEP {step + 1} =====")
@@ -172,16 +175,39 @@ use the available tools to obtain the required information.
                         continue
 
                     function = FUNCTION_MAP[tool_name]
-
+                    start_time = time.perf_counter()
                     result = function(self.df)
-
+                    elapsed = time.perf_counter() - start_time
+                    print(f"🔧 Tool execution took: {elapsed:.4f} seconds")
                     print("\n📊 TOOL RESULT:")
                     print(result)
+
+# Separate report data from LLM observation
+                    if (
+                        isinstance(result, dict)
+                        and "report" in result
+                        and "observation" in result
+                    ):
+                        self.report_data[tool_name] = result["report"]
+
+                        tool_content = json.dumps(
+                            result["observation"],
+                            default=str
+                        )
+
+                        print("\n🧠 LLM OBSERVATION:")
+                        print(tool_content)
+
+                    else:
+                        tool_content = json.dumps(
+                            result,
+                            default=str
+                        )
 
                     messages.append({
                         "role": "tool",
                         "tool_name": tool_name,
-                        "content": str(result)
+                        "content": tool_content
                     })
 
                 # Ask model what to do next
@@ -226,10 +252,32 @@ use the available tools to obtain the required information.
                     print("\n📊 TOOL RESULT:")
                     print(result)
 
+                    # Separate report data from LLM observation
+                    if (
+                        isinstance(result, dict)
+                        and "report" in result
+                        and "observation" in result
+                    ):
+                        self.report_data[tool_name] = result["report"]
+
+                        tool_content = json.dumps(
+                            result["observation"],
+                            default=str
+                        )
+
+                        print("\n🧠 LLM OBSERVATION:")
+                        print(tool_content)
+
+                    else:
+                        tool_content = json.dumps(
+                            result,
+                            default=str
+                        )
+
                     messages.append({
                         "role": "tool",
                         "tool_name": tool_name,
-                        "content": str(result)
+                        "content": tool_content
                     })
 
                 # Continue the agent loop
